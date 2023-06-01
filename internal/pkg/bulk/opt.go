@@ -56,13 +56,14 @@ func WithWaitForCheckpoints(checkpoints []int64) Opt {
 // Bulk API options
 
 type bulkOptT struct {
-	flushInterval     time.Duration
-	flushThresholdCnt int
-	flushThresholdSz  int
-	maxPending        int
-	blockQueueSz      int
-	apikeyMaxParallel int
-	apikeyMaxReqSize  int
+	flushInterval      time.Duration
+	flushThresholdCnt  int
+	flushThresholdSz   int
+	maxPending         int
+	blockQueueSz       int
+	apikeyMaxParallel  int
+	apikeyMaxReqSize   int
+	policyStaticTokens map[string]string
 }
 
 type BulkOpt func(*bulkOptT)
@@ -118,15 +119,23 @@ func WithAPIKeyMaxRequestSize(maxBytes int) BulkOpt {
 	}
 }
 
+// WithStaticPolicyTokens sets the static policy tokens. Default is empty
+func WithStaticPolicyTokens(tokens map[string]string) BulkOpt {
+	return func(opt *bulkOptT) {
+		opt.policyStaticTokens = tokens
+	}
+}
+
 func parseBulkOpts(opts ...BulkOpt) bulkOptT {
 	bopt := bulkOptT{
-		flushInterval:     defaultFlushInterval,
-		flushThresholdCnt: defaultFlushThresholdCnt,
-		flushThresholdSz:  defaultFlushThresholdSz,
-		maxPending:        defaultMaxPending,
-		apikeyMaxParallel: defaultAPIKeyMaxParallel,
-		blockQueueSz:      defaultBlockQueueSz,
-		apikeyMaxReqSize:  defaultApikeyMaxReqSize,
+		flushInterval:      defaultFlushInterval,
+		flushThresholdCnt:  defaultFlushThresholdCnt,
+		flushThresholdSz:   defaultFlushThresholdSz,
+		maxPending:         defaultMaxPending,
+		apikeyMaxParallel:  defaultAPIKeyMaxParallel,
+		blockQueueSz:       defaultBlockQueueSz,
+		apikeyMaxReqSize:   defaultApikeyMaxReqSize,
+		policyStaticTokens: map[string]string{}, // default is empty
 	}
 
 	for _, f := range opts {
@@ -149,7 +158,6 @@ func (o *bulkOptT) MarshalZerologObject(e *zerolog.Event) {
 // BulkOptsFromCfg transforms config to a slize of BulkOpt
 // used to bridge to configuration subsystem
 func BulkOptsFromCfg(cfg *config.Config) []BulkOpt {
-
 	bulkCfg := cfg.Inputs[0].Server.Bulk
 
 	// Attempt to slice the max number of connections to leave room for the bulk flush queues
@@ -157,7 +165,10 @@ func BulkOptsFromCfg(cfg *config.Config) []BulkOpt {
 	if cfg.Output.Elasticsearch.MaxConnPerHost > bulkCfg.FlushMaxPending {
 		maxKeyParallel = cfg.Output.Elasticsearch.MaxConnPerHost - bulkCfg.FlushMaxPending
 	}
-
+	policyStaticTokens := map[string]string{}
+	if cfg.Inputs[0].Server.StaticPolicyTokens.Enabled {
+		policyStaticTokens = cfg.Inputs[0].Server.StaticPolicyTokens.PolicyTokens
+	}
 	return []BulkOpt{
 		WithFlushInterval(bulkCfg.FlushInterval),
 		WithFlushThresholdCount(bulkCfg.FlushThresholdCount),
@@ -165,5 +176,6 @@ func BulkOptsFromCfg(cfg *config.Config) []BulkOpt {
 		WithMaxPending(bulkCfg.FlushMaxPending),
 		WithAPIKeyMaxParallel(maxKeyParallel),
 		WithAPIKeyMaxRequestSize(cfg.Output.Elasticsearch.MaxContentLength),
+		WithStaticPolicyTokens(policyStaticTokens),
 	}
 }
